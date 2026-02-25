@@ -29,7 +29,7 @@ export default async function NewCoursePage() {
 
     return (
         <ClientProviders>
-            <DashboardLayout userEmail={user.email}>
+            <DashboardLayout userName={user.name} role={user.role}>
                 <div className="max-w-2xl">
                     {/* Header */}
                     <div className="flex items-start justify-between gap-4">

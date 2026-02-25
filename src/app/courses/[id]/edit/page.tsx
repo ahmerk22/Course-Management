@@ -43,7 +43,7 @@ export default async function EditCoursePage({
 
     return (
         <ClientProviders>
-            <DashboardLayout userEmail={user.email}>
+            <DashboardLayout userName={user.name} role={user.role}>
                 <div className="max-w-xl bg-[#2f2f2f] border border-white/10 rounded-2xl p-5 shadow-xl">
                     <div className="flex items-center justify-between">
                         <h1 className="text-xl font-black">Edit Course</h1>
