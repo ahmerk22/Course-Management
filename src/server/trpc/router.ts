@@ -21,17 +21,37 @@ export const appRouter = t.router({
         .input(z.object({ page: z.number().min(1), pageSize: z.number().min(1).max(50) }))
         .query(async ({ input }) => {
             const supabase = await supabaseAuthed();
+
+            const { data: u } = await supabase.auth.getUser();
+            if (!u.user) throw new Error("Not authenticated");
+
             const from = (input.page - 1) * input.pageSize;
             const to = from + input.pageSize - 1;
 
-            const { data, count, error } = await supabase
+            const { data: items, count, error } = await supabase
                 .from("courses_with_counts")
                 .select("*", { count: "exact" })
                 .order("created_at", { ascending: false })
                 .range(from, to);
 
             if (error) throw new Error(error.message);
-            return { items: data ?? [], total: count ?? 0 };
+
+            // ✅ enrolled course ids for THIS user (so UI can show "Already registered")
+            const courseIds = (items ?? []).map((c: any) => c.id);
+            let enrolledIds: string[] = [];
+
+            if (courseIds.length) {
+                const { data: enrolls, error: eErr } = await supabase
+                    .from("enrollments")
+                    .select("course_id")
+                    .eq("user_id", u.user.id)
+                    .in("course_id", courseIds);
+
+                if (eErr) throw new Error(eErr.message);
+                enrolledIds = (enrolls ?? []).map((e: any) => e.course_id);
+            }
+
+            return { items: items ?? [], total: count ?? 0, enrolledIds };
         }),
 
     // STUDENT: view course
@@ -87,6 +107,23 @@ export const appRouter = t.router({
         if (error) throw new Error(error.message);
         return data ?? [];
     }),
+
+    dropCourse: t.procedure
+        .input(z.object({ courseId: z.string().uuid() }))
+        .mutation(async ({ input }) => {
+            const supabase = await supabaseAuthed();
+            const { data: u } = await supabase.auth.getUser();
+            if (!u.user) throw new Error("Not authenticated");
+
+            const { error } = await supabase
+                .from("enrollments")
+                .delete()
+                .eq("user_id", u.user.id)
+                .eq("course_id", input.courseId);
+
+            if (error) throw new Error(error.message);
+            return { ok: true };
+        }),
 
     // MANAGER: create course
     createCourse: t.procedure

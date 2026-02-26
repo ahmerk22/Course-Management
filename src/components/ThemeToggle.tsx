@@ -1,26 +1,37 @@
 "use client";
+
 import { useEffect, useState } from "react";
+import { applyTheme, getTheme, toggleTheme, ThemeMode } from "@/lib/theme";
 
 export default function ThemeToggle() {
-    const [dark, setDark] = useState(true);
+    const [theme, setThemeState] = useState<ThemeMode>("dark");
 
     useEffect(() => {
-        const saved = localStorage.getItem("theme");
-        const isDark = saved ? saved === "dark" : true;
-        setDark(isDark);
-        document.documentElement.classList.toggle("dark", isDark);
+        const t = getTheme();
+        setThemeState(t);
+        applyTheme(t); // ensure <html> has correct theme on first load
     }, []);
 
-    function toggle() {
-        const next = !dark;
-        setDark(next);
-        document.documentElement.classList.toggle("dark", next);
-        localStorage.setItem("theme", next ? "dark" : "light");
-    }
+    const label = theme === "dark" ? "Dark" : "Light";
+    const icon = theme === "dark" ? "🌙" : "🌞";
 
     return (
-        <button className="px-3 py-2 rounded-lg border" style={{ borderColor: "var(--border)" }} onClick={toggle}>
-            {dark ? "🌙 Dark" : "☀️ Light"}
+        <button
+            type="button"
+            onClick={() => {
+                const next = toggleTheme();
+                setThemeState(next);
+            }}
+            className="flex items-center justify-center gap-2 rounded-xl border font-semibold"
+            style={{
+                background: "var(--panel2)",
+                borderColor: "var(--border)",
+                width: 110, // fixed width (no jump)
+                height: 40, // fixed height
+            }}
+        >
+            <span>{icon}</span>
+            <span className="w-10 text-center">{label}</span>
         </button>
     );
 }

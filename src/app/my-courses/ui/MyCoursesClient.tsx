@@ -1,73 +1,85 @@
 "use client";
 
-import Link from "next/link";
 import { trpc } from "@/trpc/client";
+import { useState } from "react";
 
 export default function MyCoursesClient() {
-    const { data, isLoading } = trpc.myCourses.useQuery();
+    const utils = trpc.useUtils();
+    const [droppingId, setDroppingId] = useState<string | null>(null);
+
+    const q = trpc.myCourses.useQuery();
+
+    const drop = trpc.dropCourse.useMutation({
+        onMutate: ({ courseId }) => setDroppingId(courseId),
+        onSettled: async () => {
+            setDroppingId(null);
+            await utils.myCourses.invalidate();
+            await utils.listCourses.invalidate(); // updates seat counts in browse
+        },
+    });
+
+    if (q.isLoading) return <div>Loading...</div>;
+    if (q.error) return <div>Error: {q.error.message}</div>;
+
+    // your myCourses query returns rows like:
+    // { course_id, created_at, courses_with_counts: {...} }
+    const rows = q.data ?? [];
 
     return (
         <div>
-            <h1 className="text-2xl font-bold">My Courses</h1>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+            <h1 className="text-3xl font-black">My Courses</h1>
+            <p className="mt-1" style={{ color: "var(--muted)" }}>
                 Courses you registered for.
             </p>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {isLoading &&
-                    Array.from({ length: 6 }).map((_, i) => (
-                        <div
-                            key={i}
-                            className="rounded-2xl border p-5"
-                            style={{ background: "var(--panel)", borderColor: "var(--border)" }}
-                        >
-                            <div className="h-4 w-2/3 rounded bg-black/10 dark:bg-white/10" />
-                            <div className="mt-3 h-3 w-full rounded bg-black/10 dark:bg-white/10" />
-                        </div>
-                    ))}
-
-                {(data ?? []).map((row: any) => {
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {rows.map((row: any) => {
                     const c = row.courses_with_counts;
+                    if (!c) return null;
+
+                    const isDropping = droppingId === c.id;
+
                     return (
                         <div
                             key={c.id}
                             className="rounded-2xl border p-5 shadow-xl"
                             style={{ background: "var(--panel)", borderColor: "var(--border)" }}
                         >
-                            <Link href={`/courses/${c.id}`} className="text-lg font-bold">
-                                {c.title}
-                            </Link>
-                            <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+                            <div className="text-xl font-bold">{c.title}</div>
+
+                            <p className="mt-2" style={{ color: "var(--muted)" }}>
                                 {c.description ?? "No description"}
                             </p>
+
                             <div className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
-                                Seats:{" "}
-                                <span style={{ color: "var(--text)" }}>
-                  {c.seats_remaining} / {c.seats_total}
-                </span>
+                                Seats: {c.seats_taken} / {c.seats_total}
                             </div>
+
+                            <button
+                                className="mt-4 w-full rounded-xl px-4 py-3 font-semibold"
+                                style={{
+                                    background: "var(--panel2)",
+                                    border: `1px solid var(--border)`,
+                                    color: "var(--text)",
+                                }}
+                                disabled={isDropping}
+                                onClick={() => drop.mutate({ courseId: c.id })}
+                            >
+                                {isDropping ? "Dropping..." : "Drop course"}
+                            </button>
                         </div>
                     );
                 })}
-
-                {(data ?? []).length === 0 && !isLoading && (
-                    <div
-                        className="rounded-2xl border p-6 sm:col-span-2 lg:col-span-3"
-                        style={{ background: "var(--panel)", borderColor: "var(--border)" }}
-                    >
-                        <p style={{ color: "var(--muted)" }}>
-                            You haven’t registered for any courses yet.
-                        </p>
-                        <Link
-                            href="/courses"
-                            className="inline-block mt-3 underline"
-                            style={{ color: "var(--accent)" }}
-                        >
-                            Browse courses
-                        </Link>
-                    </div>
-                )}
             </div>
+
+            {rows.length === 0 && (
+                <div
+                    className="mt-6 rounded-2xl border p-6"
+                    style={{ background: "var(--panel)", borderColor: "var(--border)" }}
+                >
+                    <p style={{ color: "var(--muted)" }}>You haven’t registered for any courses yet.</p>
+                </div>
+            )}
         </div>
     );
 }

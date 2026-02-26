@@ -1,94 +1,85 @@
 "use client";
 
-import Link from "next/link";
-import { trpc } from "@/trpc/client";
 import { useMemo, useState } from "react";
+import { trpc } from "@/trpc/client";
 
 export default function CoursesBrowseClient() {
-    const pageSize = 6;
     const [page, setPage] = useState(1);
-    const utils = trpc.useUtils();
+    const pageSize = 6;
 
-    const { data, isLoading } = trpc.listCourses.useQuery({ page, pageSize });
+    const utils = trpc.useUtils();
+    const [loadingCourseId, setLoadingCourseId] = useState<string | null>(null);
+
+    const q = trpc.listCourses.useQuery({ page, pageSize });
 
     const enroll = trpc.enrollCourse.useMutation({
-        onSuccess: async () => {
+        onMutate: ({ courseId }) => setLoadingCourseId(courseId),
+        onSettled: async () => {
+            setLoadingCourseId(null);
             await utils.listCourses.invalidate();
             await utils.myCourses.invalidate();
         },
     });
 
     const totalPages = useMemo(() => {
-        const total = data?.total ?? 0;
+        const total = q.data?.total ?? 0;
         return Math.max(1, Math.ceil(total / pageSize));
-    }, [data?.total]);
+    }, [q.data?.total]);
+
+    const enrolledSet = useMemo(() => {
+        return new Set(q.data?.enrolledIds ?? []);
+    }, [q.data?.enrolledIds]);
+
+    if (q.isLoading) return <div>Loading...</div>;
+    if (q.error) return <div>Error: {q.error.message}</div>;
+
+    const items = q.data?.items ?? [];
 
     return (
         <div>
-            <div className="flex items-end justify-between gap-3">
-                <div>
-                    <h1 className="text-2xl font-bold">Browse courses</h1>
-                    <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-                        Register before seats run out.
-                    </p>
-                </div>
-            </div>
+            <h1 className="text-3xl font-black">Browse courses</h1>
+            <p className="mt-1" style={{ color: "var(--muted)" }}>
+                Register before seats run out.
+            </p>
 
-            {/* Lazy loading skeletons */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {isLoading &&
-                    Array.from({ length: pageSize }).map((_, i) => (
-                        <div
-                            key={i}
-                            className="rounded-2xl border p-5"
-                            style={{ background: "var(--panel)", borderColor: "var(--border)" }}
-                        >
-                            <div className="h-4 w-2/3 rounded bg-black/10 dark:bg-white/10" />
-                            <div className="mt-3 h-3 w-full rounded bg-black/10 dark:bg-white/10" />
-                            <div className="mt-2 h-3 w-4/5 rounded bg-black/10 dark:bg-white/10" />
-                            <div className="mt-6 h-10 w-full rounded bg-black/10 dark:bg-white/10" />
-                        </div>
-                    ))}
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {items.map((c: any) => {
+                    const isEnrolled = enrolledSet.has(c.id);
+                    const isFull = (c.seats_remaining ?? 0) <= 0;
 
-                {(data?.items ?? []).map((c) => {
-                    const full = (c.seats_remaining ?? 0) <= 0;
+                    const isLoadingBtn = loadingCourseId === c.id;
+
+                    let btnText = "Register";
+                    if (isEnrolled) btnText = "Already registered";
+                    else if (isFull) btnText = "Seats Full";
+                    else if (isLoadingBtn) btnText = "Registering...";
+
                     return (
                         <div
                             key={c.id}
                             className="rounded-2xl border p-5 shadow-xl"
                             style={{ background: "var(--panel)", borderColor: "var(--border)" }}
                         >
-                            <Link href={`/courses/${c.id}`} className="text-lg font-bold">
-                                {c.title}
-                            </Link>
-
-                            <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>
+                            <div className="text-xl font-bold">{c.title}</div>
+                            <p className="mt-2" style={{ color: "var(--muted)" }}>
                                 {c.description ?? "No description"}
                             </p>
 
-                            <div className="mt-4 text-sm" style={{ color: "var(--muted)" }}>
-                                Seats:{" "}
-                                <span style={{ color: "var(--text)" }}>
-                  {c.seats_remaining} / {c.seats_total}
-                </span>
+                            <div className="mt-3 text-sm" style={{ color: "var(--muted)" }}>
+                                Seats: {c.seats_taken} / {c.seats_total}
                             </div>
 
                             <button
-                                disabled={full || enroll.isPending}
-                                onClick={async () => {
-                                    try {
-                                        await enroll.mutateAsync({ courseId: c.id });
-                                    } catch {
-                                        // RPC throws "Seats full" etc. You can show toast if you want.
-                                    }
-                                }}
-                                className="mt-5 w-full py-3 rounded-xl font-semibold active:scale-[0.98] disabled:opacity-60"
+                                className="mt-4 w-full rounded-xl px-4 py-3 font-semibold"
                                 style={{
-                                    background: full ? "color-mix(in srgb, var(--border) 70%, transparent)" : "var(--accent)",
-                                    color: full ? "var(--muted)" : "var(--accentText)",
+                                    background: isEnrolled || isFull ? "var(--panel2)" : "var(--accent)",
+                                    color: isEnrolled || isFull ? "var(--muted)" : "var(--accentText)",
+                                    border: `1px solid var(--border)`,
                                 }}
+                                disabled={isEnrolled || isFull || isLoadingBtn}
+                                onClick={() => enroll.mutate({ courseId: c.id })}
                             >
-                                {full ? "Seats Full" : enroll.isPending ? "Registering..." : "Register"}
+                                {btnText}
                             </button>
                         </div>
                     );
@@ -96,26 +87,29 @@ export default function CoursesBrowseClient() {
             </div>
 
             {/* Pagination */}
-            <div className="mt-8 flex items-center justify-between">
+            <div
+                className="mt-8 flex items-center justify-between rounded-xl border p-3"
+                style={{ background: "var(--panel)", borderColor: "var(--border)" }}
+            >
                 <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                    className="px-4 py-2 rounded-lg border disabled:opacity-50"
+                    className="rounded-lg px-3 py-2 border"
                     style={{ borderColor: "var(--border)" }}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
                 >
                     Prev
                 </button>
 
-                <div className="text-sm" style={{ color: "var(--muted)" }}>
+                <div style={{ color: "var(--muted)" }}>
                     Page <b style={{ color: "var(--text)" }}>{page}</b> of{" "}
                     <b style={{ color: "var(--text)" }}>{totalPages}</b>
                 </div>
 
                 <button
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page >= totalPages}
-                    className="px-4 py-2 rounded-lg border disabled:opacity-50"
+                    className="rounded-lg px-3 py-2 border"
                     style={{ borderColor: "var(--border)" }}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
                 >
                     Next
                 </button>
